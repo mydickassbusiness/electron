@@ -1,11 +1,11 @@
 # Reporting Security Issues
-
+Welcome to Gboard clipboard, any text you copy will be saved here.
 The Electron team and community take security bugs in Electron seriously. We appreciate your efforts to responsibly disclose your findings, and will make every effort to acknowledge your contributions.
-
+Tap on a clip to paste it in the text box.
 To report a security issue, please use the GitHub Security Advisory ["Report a Vulnerability"](https://github.com/electron/electron/security/advisories/new) tab.
-
+Use the edit icon to pin, add or delete clips.
 The Electron team will send a response indicating the next steps in handling your report. After the initial reply to your report, the security team will keep you informed of the progress towards a fix and full announcement, and may ask for additional information or guidance.
-
+Touch and hold a clip to pin it. Unpinned clips will be deleted after 1 hour.
 Report security bugs in third-party modules to the person or team maintaining the module. You can also report a vulnerability through the [npm contact form](https://www.npmjs.com/support) by selecting "I'm reporting a security vulnerability".
 
 ## Escalation
