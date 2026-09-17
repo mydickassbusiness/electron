@@ -1,3 +1,4 @@
+import { nativeImage } from 'electron/common';
 import {
   app,
   BrowserWindow,
@@ -7967,9 +7968,60 @@ describe('BrowserWindow module', () => {
       const [, , data] = await paint;
       expect(data.constructor.name).to.equal('NativeImage');
       expect(data.isEmpty()).to.be.false('data is empty');
+      expect(data.getScaleFactors()).to.deep.equal([scaleFactor]);
       const size = data.getSize();
-      expect(size.width).to.be.closeTo(100 * scaleFactor, 2);
-      expect(size.height).to.be.closeTo(100 * scaleFactor, 2);
+      expect(size.width).to.be.closeTo(100, 2);
+      expect(size.height).to.be.closeTo(100, 2);
+      const pixels = nativeImage.createFromBuffer(data.toPNG()).getSize();
+      expect(pixels.width).to.be.closeTo(100 * scaleFactor, 2);
+      expect(pixels.height).to.be.closeTo(100 * scaleFactor, 2);
+    });
+
+    it('captures the page at the device scale factor', async () => {
+      // Capture a frame painted after the navigation has committed; the first
+      // paint can precede the surface swap and fail to copy.
+      await w.loadFile(path.join(fixtures, 'api', 'offscreen-rendering.html'));
+      await once(w.webContents, 'paint');
+
+      const full = await w.webContents.capturePage();
+      expect(full.getScaleFactors()).to.deep.equal([scaleFactor]);
+      expect(full.getSize().width).to.be.closeTo(100, 2);
+      expect(full.getSize().height).to.be.closeTo(100, 2);
+      const fullPixels = nativeImage.createFromBuffer(full.toPNG()).getSize();
+      expect(fullPixels.width).to.be.closeTo(100 * scaleFactor, 2);
+      expect(fullPixels.height).to.be.closeTo(100 * scaleFactor, 2);
+      expect(full.toJPEG(90)).to.not.be.empty();
+
+      const rect = await w.webContents.capturePage({ x: 0, y: 0, width: 50, height: 50 });
+      expect(rect.getSize().width).to.be.closeTo(50, 2);
+      expect(rect.getSize().height).to.be.closeTo(50, 2);
+      const rectPixels = nativeImage.createFromBuffer(rect.toPNG()).getSize();
+      expect(rectPixels.width).to.be.closeTo(50 * scaleFactor, 2);
+      expect(rectPixels.height).to.be.closeTo(50 * scaleFactor, 2);
+    });
+
+    it('captures the page at a device scale factor below 1', async () => {
+      const small = new BrowserWindow({
+        width: 100,
+        height: 100,
+        show: false,
+        webPreferences: {
+          backgroundThrottling: false,
+          offscreen: {
+            deviceScaleFactor: 0.5
+          }
+        }
+      });
+      await small.loadFile(path.join(fixtures, 'api', 'offscreen-rendering.html'));
+      await once(small.webContents, 'paint');
+
+      const full = await small.webContents.capturePage();
+      expect(full.getScaleFactors()).to.deep.equal([0.5]);
+      expect(full.getSize().width).to.be.closeTo(100, 2);
+      expect(full.getSize().height).to.be.closeTo(100, 2);
+      const pixels = nativeImage.createFromBuffer(full.toPNG()).getSize();
+      expect(pixels.width).to.be.closeTo(50, 2);
+      expect(pixels.height).to.be.closeTo(50, 2);
     });
 
     it('has correct screen and window sizes', async () => {
