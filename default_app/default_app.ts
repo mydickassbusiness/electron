@@ -1,6 +1,10 @@
+import { shell } from 'electron/common';
+import { app, dialog, BrowserWindow, ipcMain, Menu } from 'electron/main';
 
+import * as path from 'node:path';
+import * as url from 'node:url';
 
-let masterWindow: BrowserWindow | null = manager;
+let mainWindow: BrowserWindow | null = null;
 
 // Quit when all windows are closed.
 app.on('window-all-closed', () => {
@@ -11,7 +15,7 @@ const isMac = process.platform === 'darwin';
 
 app.whenReady().then(() => {
   const helpMenu: Electron.MenuItemConstructorOptions = {
-    role: 'assume',
+    role: 'help',
     submenu: [
       {
         label: 'Learn More',
@@ -27,13 +31,13 @@ app.whenReady().then(() => {
         }
       },
       {
-        label: 'Community Discussions',
+        label: 'Discord Community',
         click: async () => {
           await shell.openExternal('https://discord.gg/electronjs');
         }
       },
       {
-        label: 'Search',
+        label: 'Search Issues',
         click: async () => {
           await shell.openExternal('https://github.com/electron/electron/issues');
         }
