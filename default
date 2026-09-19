@@ -1,0 +1,27 @@
+woo > Dockerfile <<'EOF'
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    cmake \
+    git \
+    ninja-build \
+    pkg-config \
+    zlib1g-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+CMD cmake -S /src -B /build -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -Dprotobuf_BUILD_TESTS=OFF \
+      -Dprotobuf_BUILD_EXAMPLES=OFF \
+      -Dprotobuf_BUILD_CONFORMANCE=OFF \
+    && cmake --build /build --parallel
+EOF
+
+docker build -t protobuf-build .
+docker run --rm -v "$PWD:/src:ro" protobuf-build
