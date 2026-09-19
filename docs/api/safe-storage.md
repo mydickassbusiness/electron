@@ -55,9 +55,13 @@ deprecated:
 
 Returns `boolean` - Whether encryption is available for the deprecated synchronous safeStorage operations.
 
-On Linux, returns true if the app has emitted the `ready` event and the secret key is available.
-On macOS, returns true if Keychain is available.
-On Windows, returns true once the app has emitted the `ready` event.
+This method reflects only the legacy synchronous backend. Unlike
+[`safeStorage.isAsyncEncryptionAvailable()`](#safestorageisasyncencryptionavailable),
+it does not initialize the asynchronous encryptor.
+
+On Linux, returns true if the app has emitted the `ready` event and the legacy secret key is available.
+On macOS, returns true if Keychain is available for the legacy synchronous backend.
+On Windows, returns true once the app has emitted the `ready` event for the legacy synchronous backend.
 
 **Deprecated:** Use [`safeStorage.isAsyncEncryptionAvailable()`](#safestorageisasyncencryptionavailable) instead.
 
