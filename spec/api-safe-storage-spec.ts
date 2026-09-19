@@ -40,7 +40,7 @@ describe('safeStorage module', () => {
     );
   });
 
-  describe('SafeStorage.isEncryptionAvailable()', () => {
+  ifdescribe(process.platform !== 'linux')('SafeStorage.isEncryptionAvailable()', () => {
     it('should return true when encryption key is available (macOS, Windows)', () => {
       expect(safeStorage.isEncryptionAvailable()).to.equal(true);
     });
