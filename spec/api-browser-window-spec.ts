@@ -3922,7 +3922,6 @@ describe('BrowserWindow module', () => {
         }
       });
     });
-
     it('propagates the overlay to WebContentsViews in a BaseWindow', async () => {
       const w = new BaseWindow({
         show: false,

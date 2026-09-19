@@ -24,16 +24,6 @@ child had not exited. It now matches Node's `child_process.kill()`: it sends
 child that handles `SIGTERM` decides when, or whether, to exit. A child that
 ignores `SIGTERM` is no longer terminated by `kill()`; have it exit from its
 `SIGTERM` handler instead.
-
-### Removed: `safeStorage.isEncryptionAvailable()`, `safeStorage.encryptString()` and `safeStorage.decryptString()`
-
-The synchronous `safeStorage` methods, deprecated in Electron 45, have been
-removed along with Chromium's synchronous OSCrypt backend. Use
-`safeStorage.isAsyncEncryptionAvailable()`, `safeStorage.encryptStringAsync()`
-and `safeStorage.decryptStringAsync()` instead. They use the same per-platform
-key stores, so data encrypted with `safeStorage.encryptString()` by earlier
-versions of Electron decrypts with `safeStorage.decryptStringAsync()`.
-
 ### Behavior Changed: captured page images have the page's scale factor
 
 The [`NativeImage`](api/native-image.md) returned by `webContents.capturePage()`

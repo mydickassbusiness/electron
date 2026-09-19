@@ -10,6 +10,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { ifdescribe } from './lib/spec-helpers';
+import { expectWarningMessages } from './lib/warning-helpers';
 
 chai.use(chaiAsPromised);
 
@@ -27,6 +28,23 @@ describe('safeStorage module', () => {
     }
   });
 
+  it('emits deprecation warnings for the synchronous methods', async () => {
+    await expectWarningMessages(
+      () => {
+        safeStorage.isEncryptionAvailable();
+        safeStorage.decryptString(safeStorage.encryptString('plaintext'));
+      },
+      "(electron) 'safeStorage.isEncryptionAvailable' is deprecated and will be removed. Please use 'safeStorage.isAsyncEncryptionAvailable' instead.",
+      "(electron) 'safeStorage.encryptString' is deprecated and will be removed. Please use 'safeStorage.encryptStringAsync' instead.",
+      "(electron) 'safeStorage.decryptString' is deprecated and will be removed. Please use 'safeStorage.decryptStringAsync' instead."
+    );
+  });
+
+  describe('SafeStorage.isEncryptionAvailable()', () => {
+    it('should return true when encryption key is available (macOS, Windows)', () => {
+      expect(safeStorage.isEncryptionAvailable()).to.equal(true);
+    });
+  });
   ifdescribe(process.platform === 'linux')('SafeStorage.getSelectedStorageBackend()', () => {
     it('should return a valid backend', () => {
       expect(safeStorage.getSelectedStorageBackend()).to.equal('basic_text');

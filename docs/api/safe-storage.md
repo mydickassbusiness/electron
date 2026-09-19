@@ -8,9 +8,9 @@ This module adds extra protection to data being stored on disk by using OS-provi
 security semantics for each platform are outlined below.
 
 > [!NOTE]
-> The synchronous API (`isEncryptionAvailable`/`encryptString`/`decryptString`) was removed in Electron 46.
-> Use `isAsyncEncryptionAvailable`/`encryptStringAsync`/`decryptStringAsync`; data encrypted with the
-> synchronous API decrypts with `decryptStringAsync`.
+> The synchronous API (`isEncryptionAvailable`/`encryptString`/`decryptString`) is deprecated and will be
+> removed in Electron 46. Use the asynchronous API (`isAsyncEncryptionAvailable`/`encryptStringAsync`/`decryptStringAsync`),
+> which is non-blocking, supports key rotation, and handles temporary unavailability gracefully.
 
 ## Platform-Specific Key Providers
 
@@ -43,6 +43,24 @@ The `safeStorage` module emits the following events:
 
 The `safeStorage` module has the following methods:
 
+### `safeStorage.isEncryptionAvailable()` _Deprecated_
+
+<!--
+```YAML history
+deprecated:
+  - pr-url: https://github.com/electron/electron/pull/53670
+    breaking-changes-header: deprecated-safestorageisencryptionavailable-safestorageencryptstring-and-safestoragedecryptstring
+```
+-->
+
+Returns `boolean` - Whether encryption is available.
+
+On Linux, returns true if the app has emitted the `ready` event and the secret key is available.
+On MacOS, returns true if Keychain is available.
+On Windows, returns true once the app has emitted the `ready` event.
+
+**Deprecated:** Use [`safeStorage.isAsyncEncryptionAvailable()`](#safestorageisasyncencryptionavailable) instead.
+
 ### `safeStorage.isAsyncEncryptionAvailable()`
 
 Returns `Promise<boolean>` - Resolves with whether encryption is available for
@@ -51,6 +69,42 @@ asynchronous safeStorage operations.
 The asynchronous encryptor is initialized lazily the first time this method,
 `encryptStringAsync`, or `decryptStringAsync` is called after the app is ready.
 The returned promise resolves once initialization completes.
+
+### `safeStorage.encryptString(plainText)` _Deprecated_
+
+<!--
+```YAML history
+deprecated:
+  - pr-url: https://github.com/electron/electron/pull/53670
+    breaking-changes-header: deprecated-safestorageisencryptionavailable-safestorageencryptstring-and-safestoragedecryptstring
+```
+-->
+
+* `plainText` string
+
+Returns `Buffer` -  An array of bytes representing the encrypted string.
+
+This function will throw an error if encryption fails.
+
+**Deprecated:** Use [`safeStorage.encryptStringAsync(plainText)`](#safestorageencryptstringasyncplaintext) instead.
+
+### `safeStorage.decryptString(encrypted)` _Deprecated_
+
+<!--
+```YAML history
+deprecated:
+  - pr-url: https://github.com/electron/electron/pull/53670
+    breaking-changes-header: deprecated-safestorageisencryptionavailable-safestorageencryptstring-and-safestoragedecryptstring
+```
+-->
+
+* `encrypted` Buffer
+
+Returns `string` - the decrypted string. Decrypts the encrypted buffer
+obtained  with `safeStorage.encryptString` back into a string.
+
+**Deprecated:** Use [`safeStorage.decryptStringAsync(encrypted)`](#safestoragedecryptstringasyncencrypted) instead.
+Data encrypted with `safeStorage.encryptString` can be decrypted with `safeStorage.decryptStringAsync`.
 
 ### `safeStorage.encryptStringAsync(plainText)`
 
