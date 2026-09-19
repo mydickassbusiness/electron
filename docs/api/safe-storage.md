@@ -101,7 +101,7 @@ deprecated:
 * `encrypted` Buffer
 
 Returns `string` - the decrypted string. Decrypts the encrypted buffer
-obtained  with `safeStorage.encryptString` back into a string.
+obtained with `safeStorage.encryptString` back into a string.
 
 **Deprecated:** Use [`safeStorage.decryptStringAsync(encrypted)`](#safestoragedecryptstringasyncencrypted) instead.
 Data encrypted with `safeStorage.encryptString` can be decrypted with `safeStorage.decryptStringAsync`.
