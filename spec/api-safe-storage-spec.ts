@@ -41,8 +41,13 @@ describe('safeStorage module', () => {
   });
 
   ifdescribe(process.platform !== 'linux')('SafeStorage.isEncryptionAvailable()', () => {
-    it('should return true when encryption key is available (macOS, Windows)', () => {
-      expect(safeStorage.isEncryptionAvailable()).to.equal(true);
+    it('should return true when encryption key is available (macOS, Windows)', async () => {
+      await expectWarningMessages(
+        () => {
+          expect(safeStorage.isEncryptionAvailable()).to.equal(true);
+        },
+        "(electron) 'safeStorage.isEncryptionAvailable' is deprecated and will be removed. Please use 'safeStorage.isAsyncEncryptionAvailable' instead."
+      );
     });
   });
   ifdescribe(process.platform === 'linux')('SafeStorage.getSelectedStorageBackend()', () => {
