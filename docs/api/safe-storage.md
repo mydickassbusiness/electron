@@ -53,7 +53,7 @@ deprecated:
 ```
 -->
 
-Returns `boolean` - Whether encryption is available.
+Returns `boolean` - Whether encryption is available for the deprecated synchronous safeStorage operations.
 
 On Linux, returns true if the app has emitted the `ready` event and the secret key is available.
 On macOS, returns true if Keychain is available.
