@@ -28,6 +28,7 @@ import * as path from 'node:path';
 import { setTimeout } from 'node:timers/promises';
 import * as url from 'node:url';
 
+import { emittedUntil } from './lib/events-helpers';
 import { ifit, ifdescribe, defer, itremote, listen, startRemoteControlApp, waitUntil } from './lib/spec-helpers';
 import { closeAllWindows } from './lib/window-helpers';
 import { PipeTransport } from './pipe-transport';
@@ -40,10 +41,11 @@ const certPath = path.join(fixturesPath, 'certificates');
 describe('reporting api', () => {
   it('sends a report for an intervention', async () => {
     const reporting = new EventEmitter();
+    const ses = session.fromPartition(`reporting-${Math.random()}`);
 
     // The Reporting API only works on https with valid certs. To dodge having
     // to set up a trusted certificate, hack the validator.
-    session.defaultSession.setCertificateVerifyProc((req, cb) => {
+    ses.setCertificateVerifyProc((req, cb) => {
       cb(0);
     });
 
@@ -77,17 +79,18 @@ describe('reporting api', () => {
     });
 
     await listen(server);
-    const bw = new BrowserWindow({ show: false });
+    const bw = new BrowserWindow({ show: false, webPreferences: { session: ses } });
+    const pageUrl = `https://localhost:${(server.address() as AddressInfo).port}/a`;
 
     try {
       const reportGenerated = once(reporting, 'report');
-      await bw.loadURL(`https://localhost:${(server.address() as AddressInfo).port}/a`);
+      await bw.loadURL(pageUrl);
 
       const [reports] = await reportGenerated;
       expect(reports).to.be.an('array').with.lengthOf(1);
       const { type, url, body } = reports[0];
       expect(type).to.equal('intervention');
-      expect(url).to.equal(url);
+      expect(url).to.equal(pageUrl);
       expect(body.id).to.equal('NavigatorVibrate');
       expect(body.message).to.match(
         /Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet/
@@ -95,7 +98,7 @@ describe('reporting api', () => {
     } finally {
       bw.destroy();
       server.close();
-      session.defaultSession.setCertificateVerifyProc(null);
+      ses.setCertificateVerifyProc(null);
     }
   });
 });
@@ -2687,7 +2690,7 @@ describe('chromium features', () => {
       const [, { webContents }] = await once(app, 'browser-window-created');
       const [{ message }] = await once(webContents, 'console-message');
       expect(message).to.equal(
-        '{"require":"function","module":"object","exports":"object","process":"object","Buffer":"function"}'
+        '{"require":"function","module":"object","exports":"object","process":"object","Buffer":"undefined"}'
       );
     });
 
@@ -4553,14 +4556,14 @@ describe('iframe using HTML fullscreen API while window is OS-fullscreened', () 
     await once(w, 'leave-full-screen');
   });
 
-  // TODO: Re-enable for windows on GitHub Actions,
-  // fullscreen tests seem to hang on GHA specifically
   it('can fullscreen from in-process iframes', async () => {
     if (process.platform === 'darwin') await once(w, 'enter-full-screen');
 
-    const fullscreenChange = once(ipcMain, 'fullscreenChange');
-    w.loadFile(path.join(fixturesPath, 'pages', 'fullscreen-ipif.html'));
-    await fullscreenChange;
+    await w.loadFile(path.join(fixturesPath, 'pages', 'fullscreen-ipif.html'));
+    await w.webContents.executeJavaScript(
+      "document.querySelector('iframe').contentDocument.querySelector('video').requestFullscreen()",
+      true
+    );
 
     const fullscreenWidth = await w.webContents.executeJavaScript("document.querySelector('iframe').offsetWidth");
     expect(fullscreenWidth > 0).to.true();
@@ -4568,6 +4571,32 @@ describe('iframe using HTML fullscreen API while window is OS-fullscreened', () 
     await w.webContents.executeJavaScript('document.exitFullscreen()');
     const width = await w.webContents.executeJavaScript("document.querySelector('iframe').offsetWidth");
     expect(width).to.equal(0);
+  });
+
+  it('emits fullscreenchange on the parent document for in-process iframes', async () => {
+    if (process.platform === 'darwin') await once(w, 'enter-full-screen');
+
+    w.webContents.setBackgroundThrottling(false);
+    await w.loadFile(path.join(fixturesPath, 'pages', 'fullscreen-ipif.html'));
+    const fullscreenElementIsIframe = await w.webContents.executeJavaScript(
+      `(async () => {
+        const iframe = document.querySelector('iframe');
+        const fullscreenChange = new Promise(resolve => {
+          document.addEventListener('fullscreenchange', () => {
+            resolve(document.fullscreenElement === iframe);
+          }, { once: true });
+        });
+        const [isFullscreen] = await Promise.all([
+          fullscreenChange,
+          iframe.contentDocument.querySelector('video').requestFullscreen()
+        ]);
+        return isFullscreen;
+      })()`,
+      true
+    );
+    expect(fullscreenElementIsIframe).to.be.true('parent document fullscreenElement is the iframe');
+
+    await w.webContents.executeJavaScript('document.exitFullscreen()');
   });
 });
 
@@ -5693,6 +5722,26 @@ describe('navigator.usb', () => {
       }
     }
   });
+
+  it('does not crash when the requesting webContents is destroyed from the select-usb-device handler', async () => {
+    const guest = (webContents as typeof ElectronInternal.WebContents).create({
+      type: 'webview',
+      embedder: w.webContents
+    });
+    await guest.loadFile(path.join(fixturesPath, 'pages', 'blank.html'));
+    session.defaultSession.setPermissionCheckHandler(() => true);
+    session.defaultSession.setDevicePermissionHandler(() => true);
+    const selectFired = new Promise<void>((resolve) => {
+      w.webContents.session.once('select-usb-device', () => {
+        guest.destroy();
+        resolve();
+      });
+    });
+    guest.executeJavaScript('navigator.usb.requestDevice({filters: []})', true).catch(() => {});
+    await selectFired;
+    await setTimeout();
+    expect(guest.isDestroyed()).to.be.true();
+  });
 });
 
 describe('iframe sandbox external protocols', () => {
@@ -5735,7 +5784,13 @@ describe('iframe sandbox external protocols', () => {
   });
 
   it('blocks navigation to external protocol from a sandboxed iframe', async () => {
-    const consoleMessage = once(w.webContents, 'console-message');
+    // The page has no CSP, so the main frame also logs an "Electron Security
+    // Warning" when it finishes loading, which can arrive first.
+    const consoleMessage = emittedUntil(
+      w.webContents,
+      'console-message',
+      ({ message }: { message: string }) => !message.startsWith('Electron Security Warning')
+    );
     await w.loadURL(`${serverUrl}/?sandbox=${encodeURIComponent('allow-scripts')}`);
     const [{ message }] = await consoleMessage;
     expect(message).to.match(/external protocol blocked by sandbox/);

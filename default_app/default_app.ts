@@ -31,12 +31,6 @@ app.whenReady().then(() => {
         }
       },
       {
-        label: 'Discord Community',
-        click: async () => {
-          await shell.openExternal('https://discord.gg/electronjs');
-        }
-      },
-      {
         label: 'Search Issues',
         click: async () => {
           await shell.openExternal('https://github.com/electron/electron/issues');
