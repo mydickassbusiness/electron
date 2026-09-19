@@ -7,7 +7,8 @@ import {
   BrowserView,
   WebContents,
   BaseWindow,
-  WebContentsView
+  WebContentsView,
+  Menu
 } from 'electron/main';
 
 import { assert, expect } from 'chai';
@@ -3953,6 +3954,43 @@ describe('webContents module', () => {
 
   describe('setIgnoreMenuShortcuts(ignore)', () => {
     afterEach(closeAllWindows);
+
+    const trackShortcutInvocations = (contents: WebContents) => {
+      const previousMenu = Menu.getApplicationMenu();
+      let invocations = 0;
+      Menu.setApplicationMenu(
+        Menu.buildFromTemplate([
+          {
+            label: 'Test',
+            submenu: [{ label: 'Shortcut', accelerator: 'F13', click: () => invocations++ }]
+          }
+        ])
+      );
+      contents.debugger.attach();
+      defer(() => {
+        Menu.setApplicationMenu(previousMenu);
+        if (!contents.isDestroyed() && contents.debugger.isAttached()) contents.debugger.detach();
+      });
+
+      return async (expectedInvocations: number) => {
+        const base = { key: 'F13', code: 'F13', windowsVirtualKeyCode: 124 };
+        if (process.platform === 'darwin') {
+          // Native macOS menu input requires kVK_F13 and NSF13FunctionKey.
+          await contents.debugger.sendCommand('Input.dispatchKeyEvent', {
+            ...base,
+            type: 'rawKeyDown',
+            nativeVirtualKeyCode: 0x69,
+            text: '\uF710'
+          });
+        } else {
+          contents.sendInputEvent({ type: 'keyDown', keyCode: 'F13' });
+        }
+        await contents.debugger.sendCommand('Input.dispatchKeyEvent', { ...base, type: 'keyUp' });
+        await waitUntil(() => invocations >= expectedInvocations);
+        return invocations;
+      };
+    };
+
     it('does not throw', () => {
       const w = new BrowserWindow({ show: false });
       expect(() => {
@@ -3960,6 +3998,68 @@ describe('webContents module', () => {
         w.webContents.setIgnoreMenuShortcuts(false);
       }).to.not.throw();
     });
+
+    it('honors the initial ignoreMenuShortcuts preference', async () => {
+      const window = new BrowserWindow({
+        show: true,
+        webPreferences: { ignoreMenuShortcuts: true } as Electron.WebPreferences
+      });
+      await window.loadURL('about:blank');
+      window.webContents.focus();
+      const sendShortcut = trackShortcutInvocations(window.webContents);
+      expect(await sendShortcut(0)).to.equal(0);
+      window.webContents.setIgnoreMenuShortcuts(false);
+      expect(await sendShortcut(1)).to.equal(1);
+    });
+
+    it('does not crash for detached DevTools without preferences', async () => {
+      const window = new BrowserWindow({ show: false });
+      await window.loadURL('about:blank');
+      const devToolsOpened = once(window.webContents, 'devtools-opened');
+      window.webContents.openDevTools({ mode: 'detach', activate: false });
+      await devToolsOpened;
+
+      const devTools = window.webContents.devToolsWebContents!;
+      expect(devTools.getLastWebPreferences()).to.equal(null);
+      devTools.setIgnoreMenuShortcuts(false);
+      devTools.setIgnoreMenuShortcuts(true);
+      devTools.setIgnoreMenuShortcuts(false);
+    });
+
+    for (const target of ['webview', 'docked DevTools'] as const) {
+      it(`uses the source settings for ${target}`, async () => {
+        const window = new BrowserWindow({ show: true, webPreferences: { webviewTag: true } });
+        let source: WebContents;
+        if (target === 'webview') {
+          const attached = once(window.webContents, 'did-attach-webview') as Promise<[any, WebContents]>;
+          await window.loadFile(path.join(fixturesPath, 'pages', 'webview-zoom-factor.html'));
+          [, source] = await attached;
+          await source.loadURL('about:blank');
+        } else {
+          await window.loadURL('about:blank');
+          const devToolsOpened = once(window.webContents, 'devtools-opened');
+          const devToolsFocused = once(window.webContents, 'devtools-focused');
+          window.webContents.openDevTools({ mode: 'right', activate: true });
+          await Promise.all([devToolsOpened, devToolsFocused]);
+          source = window.webContents.devToolsWebContents!;
+          expect(source.getLastWebPreferences()).to.equal(null);
+          source.setIgnoreMenuShortcuts(false);
+        }
+
+        const sendShortcut = trackShortcutInvocations(source);
+        let expectedInvocations = 0;
+        for (const ignore of [true, false, true, false]) {
+          if (target === 'webview') {
+            window.focus();
+            await window.webContents.executeJavaScript("document.querySelector('webview').focus()");
+          }
+          window.webContents.setIgnoreMenuShortcuts(!ignore);
+          source.setIgnoreMenuShortcuts(ignore);
+          if (!ignore) expectedInvocations++;
+          expect(await sendShortcut(expectedInvocations)).to.equal(expectedInvocations);
+        }
+      });
+    }
   });
 
   const crashPrefs = [
@@ -4013,6 +4113,35 @@ describe('webContents module', () => {
         expect(w.webContents.isCrashed()).to.equal(false);
       });
 
+      it('emits render-process-gone on app, then on the webContents, then runs their microtasks', async () => {
+        const order: string[] = [];
+        const onApp = (_e: Electron.Event, wc: WebContents) => {
+          if (wc !== w.webContents) return;
+          order.push('app');
+          Promise.resolve().then(() => order.push('app-microtask'));
+        };
+        app.on('render-process-gone', onApp);
+        defer(() => app.removeListener('render-process-gone', onApp));
+        w.webContents.on('render-process-gone', () => order.push('webContents-1'));
+        w.webContents.on('render-process-gone', () => order.push('webContents-2'));
+        const done = once(w.webContents, 'render-process-gone');
+        w.webContents.forcefullyCrashRenderer();
+        await done;
+        await setTimeout();
+        expect(order).to.deep.equal(['app', 'webContents-1', 'webContents-2', 'app-microtask']);
+      });
+
+      it('still emits render-process-gone on a webContents destroyed by an app listener', async () => {
+        const onApp = (_e: Electron.Event, wc: WebContents) => {
+          if (wc === w.webContents) wc.destroy();
+        };
+        app.on('render-process-gone', onApp);
+        defer(() => app.removeListener('render-process-gone', onApp));
+        const done = once(w.webContents, 'render-process-gone');
+        w.webContents.forcefullyCrashRenderer();
+        await done;
+      });
+
       it('survives a synchronous reload() from the render-process-gone handler', async () => {
         // Regression test: a synchronous reload() from 'render-process-gone'
         // used to re-enter renderer process launch mid-teardown and
@@ -4028,6 +4157,52 @@ describe('webContents module', () => {
         await once(w.webContents, 'did-finish-load');
         expect(w.webContents.isCrashed()).to.equal(false);
       });
+
+      // The response is held until a renderer has been frozen, so the
+      // navigation is waiting to commit when that renderer is killed; loadURL()
+      // then rejects from inside content's teardown and the handler navigates
+      // again straight away. With COOP the response starts a second renderer
+      // for a speculative frame host and that is the one killed.
+      for (const coop of [false, true]) {
+        ifit(process.platform !== 'win32')(
+          `survives a loadURL() from the rejection of a load whose ${coop ? 'speculative ' : ''}renderer died before commit`,
+          async () => {
+            let release: (() => void) | null = null;
+            const server = http.createServer((req, res) => {
+              release = () => {
+                res.setHeader('content-type', 'text/html');
+                if (coop) res.setHeader('cross-origin-opener-policy', 'same-origin-allow-popups');
+                res.end('<h1>hi</h1>');
+              };
+            });
+            defer(() => server.close());
+            const { url } = await listen(server);
+            const rendererPids = () =>
+              app
+                .getAppMetrics()
+                .filter((m) => m.type === 'Tab')
+                .map((m) => m.pid);
+
+            const load = w.webContents.loadURL(url);
+            await waitUntil(() => w.webContents.getOSProcessId() !== 0 && release !== null);
+            const before = new Set(rendererPids());
+            let victim = w.webContents.getOSProcessId();
+            if (!coop) process.kill(victim, 'SIGSTOP');
+            release!();
+            if (coop) {
+              await waitUntil(() => rendererPids().some((pid) => !before.has(pid)));
+              victim = rendererPids().find((pid) => !before.has(pid))!;
+              process.kill(victim, 'SIGSTOP');
+            }
+            await setTimeout(1000);
+            process.kill(victim, 'SIGKILL');
+
+            await expect(load).to.eventually.be.rejected();
+            await w.webContents.loadURL('about:blank');
+            expect(w.webContents.isCrashed()).to.equal(false);
+          }
+        );
+      }
     });
   }
 
